@@ -59,7 +59,6 @@ export const UsuariosPage = () => {
       <Table striped bordered hover>
         <thead>
           <tr>
-            <th>ID</th>
             <th>Nombre</th>
             <th>Correo</th>
             <th>Acciones</th>
@@ -68,7 +67,6 @@ export const UsuariosPage = () => {
         <tbody>
           {usuarios.map((usuario) => (
             <tr key={usuario.id}>
-              <td>{usuario.id}</td>
               <td>{usuario.nombre}</td>
               <td>{usuario.email}</td>
               <td>
