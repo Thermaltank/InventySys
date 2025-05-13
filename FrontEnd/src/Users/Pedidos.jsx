@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import axios from "axios";
 import { useEffect, useState } from "react";
 import {
@@ -12,8 +13,7 @@ import {
   Document,
   Page,
   Text,
-  View,
-  Image,
+  
   StyleSheet,
 } from "@react-pdf/renderer";
 
@@ -59,6 +59,7 @@ export const Pedidos = () => {
 
         setPedidos(pedidosConDetalles);
       } catch (err) {
+        console.error("Error al cargar los pedidos:", err);
         setError("Error al cargar tus pedidos.");
       }
     };
@@ -76,6 +77,7 @@ export const Pedidos = () => {
       setPedidos(pedidos.filter((p) => p.id !== pedidoId));
       setMensaje("Pedido cancelado correctamente.");
     } catch (err) {
+      console.error("Error al cancelar el pedido:", err);
       setError("Error al cancelar el pedido.");
     }
   };

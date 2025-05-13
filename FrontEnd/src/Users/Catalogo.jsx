@@ -31,6 +31,7 @@ export const Catalogo = () => {
         const res = await axios.get(API_PRODUCTOS);
         setProductos(res.data);
       } catch (e) {
+        console.error("Error al cargar productos:", e);
         setError("Error al cargar productos");
       }
     };
@@ -56,6 +57,7 @@ export const Catalogo = () => {
       const res = await axios.post(API_COMPRAS, compraDTO);
       setMensaje("Compra realizada con éxito, puedes descargar tu factura en mis pedidos");
     } catch (err) {
+      console.error("Error al realizar la compra:", err);
       setError("Error al realizar la compra");
     } finally {
       setShowModal(false);

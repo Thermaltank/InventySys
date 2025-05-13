@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import { Offcanvas, Button, Alert, Table, Form } from "react-bootstrap";
 import { useEffect, useState } from "react";
 import axios from "axios";
@@ -48,6 +49,7 @@ export const Carrito = ({ show, onHide }) => {
       setMensaje("Compras confirmadas correctamente.");
       actualizarLocalStorage([]);
     } catch (err) {
+      console.error("Error al confirmar la compra:", err);
       setError("Error al confirmar la compra.");
     }
   };
