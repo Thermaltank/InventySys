@@ -6,66 +6,80 @@ export const PedidosPage = () => {
   const [pedidos, setPedidos] = useState([]);
   const [mensaje, setMensaje] = useState(null);
   const [error, setError] = useState(null);
+  const [statusVisual, setStatusVisual] = useState({});
 
-  const API_PEDIDOS = "http://localhost:8080/api/compras"; // API para obtener los pedidos
-  const API_USUARIO = "http://localhost:8080/api/usuarios"; // API para obtener el usuario
-  const API_PRODUCTO = "http://localhost:8080/api/productos"; // API para obtener el producto
+  const API_PEDIDOS = "http://localhost:8080/api/compras";
+  const API_USUARIO = "http://localhost:8080/api/usuarios";
+  const API_PRODUCTO = "http://localhost:8080/api/productos";
 
+  // Cargar estado visual desde localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem("pedidoStatusVisual");
+    if (stored) {
+      setStatusVisual(JSON.parse(stored));
+    }
+  }, []);
+
+  // Cargar pedidos
   useEffect(() => {
     const fetchPedidos = async () => {
       try {
         const res = await axios.get(API_PEDIDOS);
-
-        // Aquí se mapea para agregar los detalles del usuario y del producto
         const pedidosConDetalles = await Promise.all(
           res.data.map(async (pedido) => {
-            const usuarioId = pedido.usuario;
-            const productoId = pedido.producto;
-
-            // Asegurarnos de que los IDs sean válidos antes de realizar la solicitud
-            if (usuarioId && productoId) {
-              try {
-                // Obtener usuario por ID
-                const usuarioRes = await axios.get(`${API_USUARIO}/${usuarioId}`);
-                // Obtener producto por ID
-                const productoRes = await axios.get(`${API_PRODUCTO}/${productoId}`);
-
-                return {
-                  ...pedido,
-                  usuario: usuarioRes.data, // Añadir detalles del usuario
-                  producto: productoRes.data, // Añadir detalles del producto
-                };
-              } catch (error) {
-                console.error("Error al obtener detalles del usuario o producto:", error);
-                return pedido; // Si falla, devolvemos el pedido sin detalles
-              }
-            } else {
-              return pedido; // Si no hay usuario o producto, devolvemos el pedido tal cual
+            try {
+              const [usuarioRes, productoRes] = await Promise.all([
+                axios.get(`${API_USUARIO}/${pedido.usuario}`),
+                axios.get(`${API_PRODUCTO}/${pedido.producto}`)
+              ]);
+              return {
+                ...pedido,
+                usuario: usuarioRes.data,
+                producto: productoRes.data,
+              };
+            } catch (err) {
+              console.warn("Error en usuario o producto:", err);
+              return pedido;
             }
           })
         );
-
-        setPedidos(pedidosConDetalles); // Actualizamos la lista de pedidos con los detalles
+        setPedidos(pedidosConDetalles);
       } catch (e) {
         setError("Error al cargar los pedidos.");
         console.error(e);
       }
     };
-
     fetchPedidos();
   }, []);
 
-  const despacharPedido =  () => {
-    
+  // Guardar estado visual en localStorage
+  const actualizarEstadoVisual = (id, estado) => {
+    const nuevos = { ...statusVisual, [id]: estado };
+    setStatusVisual(nuevos);
+    localStorage.setItem("pedidoStatusVisual", JSON.stringify(nuevos));
   };
 
-  // Función para redondear el precio
-   const formatPrice = (precio) => {
-  const precioRedondeado = Math.round(precio); // Redondea el precio a un número entero.
-  
-  return new Intl.NumberFormat('es-CO').format(precioRedondeado);
-};
+  const limpiarEstados = () => {
+    setStatusVisual({});
+    localStorage.removeItem("pedidoStatusVisual");
+  };
 
+  const getRowClass = (id) => {
+    switch (statusVisual[id]) {
+      case "cancelar":
+        return "table-danger";
+      case "procesar":
+        return "table-warning";
+      case "vender":
+        return "table-success";
+      default:
+        return "";
+    }
+  };
+
+  const formatPrice = (precio) => {
+    return new Intl.NumberFormat("es-CO").format(Math.round(precio));
+  };
 
   return (
     <Container className="mt-4">
@@ -74,10 +88,16 @@ export const PedidosPage = () => {
       {mensaje && <Alert variant="success">{mensaje}</Alert>}
       {error && <Alert variant="danger">{error}</Alert>}
 
+      <div className="mb-3">
+        <Button variant="secondary" onClick={limpiarEstados}>
+          Limpiar Estados Visuales
+        </Button>
+      </div>
+
       {pedidos.length === 0 ? (
         <p>No hay pedidos para mostrar.</p>
       ) : (
-        <Table striped bordered hover>
+        <Table bordered hover responsive>
           <thead>
             <tr>
               <th>Usuario</th>
@@ -89,40 +109,39 @@ export const PedidosPage = () => {
           </thead>
           <tbody>
             {pedidos.map((pedido) => (
-              <tr key={pedido.id}>
-                <td>
-                  {pedido.usuario ? pedido.usuario.nombre : "Usuario no disponible"}
-                </td>
-                <td>
-                  {pedido.producto ? pedido.producto.nombre : "Producto no disponible"}
-                </td>
+              <tr key={pedido.id} className={getRowClass(pedido.id)}>
+                <td>{pedido.usuario?.nombre || "Usuario no disponible"}</td>
+                <td>{pedido.producto?.nombre || "Producto no disponible"}</td>
                 <td>{pedido.cantidad}</td>
                 <td>
-                  {pedido.producto && pedido.producto.precio
+                  {pedido.producto?.precio
                     ? `$${formatPrice(pedido.cantidad * pedido.producto.precio)}`
                     : "N/A"}
                 </td>
                 <td>
-                  <div className="d-flex gap-3">
+                  <div className="d-flex gap-2 flex-wrap">
                     <Button
-                    variant="danger"
-                    onClick={() => despacharPedido(pedido.id)}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    variant="warning"
-                    onClick={() => despacharPedido(pedido.id)}
-                  >
-                    Procesar
-                  </Button>
-                  <Button
-                    variant="success"
-                    onClick={() => despacharPedido(pedido.id)}
-                  >
-                    Vender
-                  </Button></div>
-                  
+                      size="sm"
+                      variant="danger"
+                      onClick={() => actualizarEstadoVisual(pedido.id, "cancelar")}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="warning"
+                      onClick={() => actualizarEstadoVisual(pedido.id, "procesar")}
+                    >
+                      Procesar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="success"
+                      onClick={() => actualizarEstadoVisual(pedido.id, "vender")}
+                    >
+                      Vender
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}

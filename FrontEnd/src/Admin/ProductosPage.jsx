@@ -8,10 +8,12 @@ export const ProductosPage = () => {
   const [form, setForm] = useState({ nombre: '', categoria: '', precio: '', stock: '' });
   const [editId, setEditId] = useState(null); 
   const [showModal, setShowModal] = useState(false);
+  const [categorias, setCategorias] = useState([]);
+  const [errorForm, setErrorForm] = useState(null);
 
   const API_URL = 'http://localhost:8080/api/productos';
 
-  // 🚀 Cargar productos del backend
+  // Cargar productos del backend
   const fetchProducts = async () => {
     try {
       const response = await axios.get(API_URL);
@@ -20,6 +22,14 @@ export const ProductosPage = () => {
       console.error('Error cargando productos:', error);
     }
   };
+
+  // Cargar categorías guardadas en localStorage
+  useEffect(() => {
+    const cats = localStorage.getItem('categorias');
+    if (cats) {
+      setCategorias(JSON.parse(cats));
+    }
+  }, []);
 
   useEffect(() => {
     fetchProducts();
@@ -30,8 +40,31 @@ export const ProductosPage = () => {
     setForm({ ...form, [name]: value });
   };
 
-  //  Agregar o actualizar producto
+  const validateForm = () => {
+    if (!form.nombre.trim()) {
+      setErrorForm('El nombre es obligatorio');
+      return false;
+    }
+    if (!form.categoria.trim()) {
+      setErrorForm('La categoría es obligatoria');
+      return false;
+    }
+    if (!form.precio || isNaN(form.precio) || parseFloat(form.precio) <= 0) {
+      setErrorForm('El precio debe ser un número positivo');
+      return false;
+    }
+    if (!form.stock || isNaN(form.stock) || parseInt(form.stock, 10) < 0) {
+      setErrorForm('El stock debe ser un número igual o mayor a 0');
+      return false;
+    }
+    setErrorForm(null);
+    return true;
+  };
+
+  // Agregar o actualizar producto
   const handleAddOrUpdate = async () => {
+    if (!validateForm()) return;
+
     try {
       if (editId !== null) {
         await axios.put(`${API_URL}/${editId}`, {
@@ -52,10 +85,11 @@ export const ProductosPage = () => {
       fetchProducts();
     } catch (error) {
       console.error('Error al guardar producto:', error);
+      setErrorForm('Error al guardar producto');
     }
   };
 
-  //  Editar producto
+  // Editar producto
   const handleEdit = (product) => {
     setForm({
       nombre: product.nombre,
@@ -65,9 +99,10 @@ export const ProductosPage = () => {
     });
     setEditId(product.id);
     setShowModal(true);
+    setErrorForm(null);
   };
 
-  //  Eliminar producto
+  // Eliminar producto
   const handleDelete = async (id) => {
     try {
       await axios.delete(`${API_URL}/${id}`);
@@ -79,7 +114,7 @@ export const ProductosPage = () => {
 
   const getEstado = (stock) => {
     if (stock === 0) return <Badge bg="danger">Sin stock</Badge>;
-    if (stock <= 3) return <Badge bg="warning" text="dark">Bajo</Badge>;
+    if (stock <= 10) return <Badge bg="warning" text="dark">Pocas unidades</Badge>;
     return <Badge bg="success">Normal</Badge>;
   };
 
@@ -87,12 +122,10 @@ export const ProductosPage = () => {
     p.nombre.toLowerCase().includes(search.toLowerCase())
   );
 
-   const formatPrice = (precio) => {
-  const precioRedondeado = Math.round(precio); // Redondea el precio a un número entero.
-  
-  return new Intl.NumberFormat('es-CO').format(precioRedondeado);
-};
-
+  const formatPrice = (precio) => {
+    const precioRedondeado = Math.round(precio);
+    return new Intl.NumberFormat('es-CO').format(precioRedondeado);
+  };
 
   return (
     <div className="p-4">
@@ -106,14 +139,23 @@ export const ProductosPage = () => {
         onChange={e => setSearch(e.target.value)}
       />
 
-      <Button onClick={() => { setForm({ nombre: '', categoria: '', precio: '', stock: '' }); setEditId(null); setShowModal(true); }} variant="primary" className="mb-3">
+      <Button
+        onClick={() => {
+          setForm({ nombre: '', categoria: '', precio: '', stock: '' });
+          setEditId(null);
+          setShowModal(true);
+          setErrorForm(null);
+        }}
+        variant="primary"
+        className="mb-3"
+      >
         Agregar Producto
       </Button>
 
       <Table bordered hover responsive>
         <thead>
           <tr>
-            <th>ID</th>
+            <th>#</th>
             <th>Nombre</th>
             <th>Categoría</th>
             <th>Precio</th>
@@ -125,15 +167,28 @@ export const ProductosPage = () => {
         <tbody>
           {filtered.map((product, index) => (
             <tr key={product.id}>
-              <td>{index + 1}</td> {/* Reajustamos el ID localmente */}
+              <td>{index + 1}</td>
               <td>{product.nombre}</td>
               <td>{product.categoria}</td>
-              <td>${formatPrice(product.precio)}</td> {/* Formateamos el precio */}
+              <td>${formatPrice(product.precio)}</td>
               <td>{product.stock}</td>
               <td>{getEstado(product.stock)}</td>
               <td>
-                <Button size="sm" variant="primary" onClick={() => handleEdit(product)} className="me-2">Editar</Button>
-                <Button size="sm" variant="danger" onClick={() => handleDelete(product.id)}>Eliminar</Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => handleEdit(product)}
+                  className="me-2"
+                >
+                  Editar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => handleDelete(product.id)}
+                >
+                  Eliminar
+                </Button>
               </td>
             </tr>
           ))}
@@ -152,30 +207,42 @@ export const ProductosPage = () => {
               placeholder="Nombre"
               value={form.nombre}
               onChange={handleChange}
+              className="mb-3"
             />
-            <br />
-            <Form.Control
+
+            <Form.Select
               name="categoria"
-              placeholder="Categoría"
               value={form.categoria}
               onChange={handleChange}
-            />
-            <br />
+              className="mb-3"
+            >
+              <option value="">-- Selecciona categoría --</option>
+              {categorias.map((cat, idx) => (
+                <option key={idx} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </Form.Select>
+
             <Form.Control
               name="precio"
               placeholder="Precio"
               type="number"
               value={form.precio}
               onChange={handleChange}
+              className="mb-3"
             />
-            <br />
+
             <Form.Control
               name="stock"
               placeholder="Stock"
               type="number"
               value={form.stock}
               onChange={handleChange}
+              className="mb-3"
             />
+
+            {errorForm && <div className="text-danger mb-2">{errorForm}</div>}
           </Form>
         </Modal.Body>
         <Modal.Footer>

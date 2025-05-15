@@ -13,11 +13,8 @@ import {
   Document,
   Page,
   Text,
-  
   StyleSheet,
 } from "@react-pdf/renderer";
-
-// Logo embebido en base64 (ejemplo)
 
 export const Pedidos = () => {
   const [pedidos, setPedidos] = useState([]);
@@ -31,25 +28,27 @@ export const Pedidos = () => {
   const usuarioId = localStorage.getItem("usuarioId");
   const usuarioNombre = localStorage.getItem("usuarioNombre") || "Cliente";
 
- const formatPrice = (precio) => {
-  const precioRedondeado = Math.round(precio); // Redondea el precio a un número entero.
-  
-  return new Intl.NumberFormat('es-CO').format(precioRedondeado);
-};
+  const formatPrice = (precio) => {
+    const precioRedondeado = Math.round(precio);
+    return new Intl.NumberFormat("es-CO").format(precioRedondeado);
+  };
 
   useEffect(() => {
     const fetchPedidosUsuario = async () => {
       try {
         const res = await axios.get(API_COMPRAS);
-        const pedidosUsuario = res.data.filter(p => p.usuario == usuarioId);
+        const pedidosUsuario = res.data.filter((p) => p.usuario == usuarioId);
 
         const pedidosConDetalles = await Promise.all(
           pedidosUsuario.map(async (pedido) => {
             try {
-              const productoRes = await axios.get(`${API_PRODUCTOS}/${pedido.producto}`);
+              const productoRes = await axios.get(
+                `${API_PRODUCTOS}/${pedido.producto}`
+              );
               return {
                 ...pedido,
                 producto: productoRes.data,
+                fechaCompra: pedido.fechaCompra || new Date().toISOString(),
               };
             } catch {
               return pedido;
@@ -57,7 +56,29 @@ export const Pedidos = () => {
           })
         );
 
-        setPedidos(pedidosConDetalles);
+        // Agrupación de pedidos por fecha y hora exacta hasta segundos
+        const agrupados = pedidosConDetalles.reduce((acc, pedido) => {
+          // Extraemos la fecha hasta segundos: "YYYY-MM-DDTHH:mm:ss"
+          const fecha = new Date(pedido.fechaCompra);
+          const clave = fecha.toISOString().slice(0, 19); // Ejemplo: "2025-05-15T07:24:35"
+
+          // Buscar si ya existe un grupo con esa clave
+          let grupo = acc.find((g) => g.clave === clave);
+
+          if (!grupo) {
+            grupo = {
+              clave,
+              fecha,
+              productos: [],
+            };
+            acc.push(grupo);
+          }
+
+          grupo.productos.push(pedido);
+          return acc;
+        }, []);
+
+        setPedidos(agrupados);
       } catch (err) {
         console.error("Error al cargar los pedidos:", err);
         setError("Error al cargar tus pedidos.");
@@ -71,10 +92,16 @@ export const Pedidos = () => {
     }
   }, [usuarioId]);
 
-  const cancelarPedido = async (pedidoId) => {
+  const cancelarPedido = async (pedidoIds) => {
     try {
-      await axios.delete(`${API_COMPRAS}/${pedidoId}`);
-      setPedidos(pedidos.filter((p) => p.id !== pedidoId));
+      await Promise.all(
+        pedidoIds.map((id) => axios.delete(`${API_COMPRAS}/${id}`))
+      );
+      setPedidos(
+        pedidos.filter(
+          (p) => !pedidoIds.some((id) => p.productos.find((pr) => pr.id === id))
+        )
+      );
       setMensaje("Pedido cancelado correctamente.");
     } catch (err) {
       console.error("Error al cancelar el pedido:", err);
@@ -87,30 +114,38 @@ export const Pedidos = () => {
     setShowModal(true);
   };
 
-  const FacturaPDF = ({ pedido }) => {
+  const FacturaPDF = ({ grupo }) => {
     const styles = StyleSheet.create({
       page: { padding: 30, fontSize: 12 },
-      title: { fontSize: 16, marginBottom: 10, textAlign: 'center' },
+      title: { fontSize: 16, marginBottom: 10, textAlign: "center" },
       row: { marginBottom: 6 },
-      logo: { width: 100, height: 40, marginBottom: 20, alignSelf: 'center' },
     });
+
+    const total = grupo.productos.reduce(
+      (acc, prod) => acc + prod.cantidad * prod.producto?.precio,
+      0
+    );
 
     return (
       <Document>
         <Page style={styles.page}>
           <Text style={styles.title}>Factura de Compra</Text>
           <Text style={styles.row}>Cliente: {usuarioNombre}</Text>
-          <Text style={styles.row}>Producto: {pedido.producto?.nombre}</Text>
-          <Text style={styles.row}>Cantidad: {pedido.cantidad}</Text>
-          <Text style={styles.row}>Precio unitario: ${formatPrice(pedido.producto?.precio)}</Text>
-          <Text style={styles.row}>Total: ${formatPrice(pedido.cantidad * pedido.producto?.precio)}</Text>
-          <Text style={styles.row}>Fecha: {new Date(pedido.fecha || Date.now()).toLocaleDateString()}</Text>
+          <Text style={styles.row}>
+            Fecha: {new Date(grupo.fecha).toLocaleString()}
+          </Text>
+          {grupo.productos.map((p, i) => (
+            <Text key={i} style={styles.row}>
+              {p.producto?.nombre} - Cant: {p.cantidad} - Precio: ${formatPrice(
+                p.producto?.precio
+              )}
+            </Text>
+          ))}
+          <Text style={styles.row}>Total: ${formatPrice(total)}</Text>
         </Page>
       </Document>
     );
   };
-
-  
 
   return (
     <Container className="mt-4">
@@ -122,40 +157,62 @@ export const Pedidos = () => {
       ) : (
         <Table striped bordered hover>
           <thead>
-            <tr>
-              <th>Producto</th>
-              <th>Cantidad</th>
-              <th>Total</th>
-              <th>Acciones</th>
-            </tr>
+            {/* Puedes agregar encabezados aquí si quieres */}
           </thead>
           <tbody>
-            {pedidos.map((pedido) => (
-              <tr key={pedido.id}>
-                <td>{pedido.producto?.nombre || "No disponible"}</td>
-                <td>{pedido.cantidad}</td>
-                <td>
-                  {pedido.producto?.precio
-                    ? `$${formatPrice(pedido.cantidad * pedido.producto.precio)}`
-                    : "N/A"}
-                </td>
-                <td>
-                  <Button
-                    variant="info"
-                    className="me-2"
-                    onClick={() => abrirModal(pedido)}
-                  >
-                    Ver Detalles
-                  </Button>
-                  <Button
-                    variant="danger"
-                    onClick={() => cancelarPedido(pedido.id)}
-                  >
-                    Cancelar
-                  </Button>
-                </td>
-              </tr>
-            ))}
+            {pedidos.map((grupo, index) => {
+              const totalGrupo = grupo.productos.reduce(
+                (acc, p) => acc + p.cantidad * p.producto?.precio,
+                0
+              );
+              return (
+                <tr key={index}>
+                  <td colSpan={4}>
+                    <strong>Pedido realizado el:</strong>{" "}
+                    {new Date(grupo.clave).toLocaleString()}
+                    <Table size="sm" className="mt-2">
+                      <thead>
+                        <tr>
+                          <th>Producto</th>
+                          <th>Cantidad</th>
+                          <th>Precio</th>
+                          <th>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grupo.productos.map((prod) => (
+                          <tr key={prod.id}>
+                            <td>{prod.producto?.nombre}</td>
+                            <td>{prod.cantidad}</td>
+                            <td>${formatPrice(prod.producto?.precio)}</td>
+                            <td>
+                              ${formatPrice(prod.cantidad * prod.producto?.precio)}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td colSpan={3}><strong>Total de la compra</strong></td>
+                          <td><strong>${formatPrice(totalGrupo)}</strong></td>
+                        </tr>
+                      </tbody>
+                    </Table>
+                    <Button
+                      variant="info"
+                      className="me-2"
+                      onClick={() => abrirModal(grupo)}
+                    >
+                      Ver Detalles
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => cancelarPedido(grupo.productos.map((p) => p.id))}
+                    >
+                      Notificar un problema
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </Table>
       )}
@@ -171,15 +228,28 @@ export const Pedidos = () => {
           <Modal.Title>Detalles del Pedido</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {pedidoSeleccionado && pedidoSeleccionado.producto ? (
+          {pedidoSeleccionado ? (
             <>
-              <p><strong>Producto:</strong> {pedidoSeleccionado.producto.nombre}</p>
-              <p><strong>Cantidad:</strong> {pedidoSeleccionado.cantidad}</p>
-              <p><strong>Precio unitario:</strong> ${formatPrice(pedidoSeleccionado.producto.precio)}</p>
-              <p><strong>Total:</strong> ${formatPrice(pedidoSeleccionado.cantidad * pedidoSeleccionado.producto.precio)}</p>
-
+              <p>
+                <strong>Fecha:</strong>{" "}
+                {new Date(pedidoSeleccionado.fecha).toLocaleString()}
+              </p>
+              {pedidoSeleccionado.productos.map((prod) => (
+                <div key={prod.id}>
+                  <p>
+                    <strong>Producto:</strong> {prod.producto?.nombre}
+                  </p>
+                  <p>
+                    <strong>Cantidad:</strong> {prod.cantidad}
+                  </p>
+                  <p>
+                    <strong>Precio:</strong> ${formatPrice(prod.producto?.precio)}
+                  </p>
+                  <hr />
+                </div>
+              ))}
               <PDFDownloadLink
-                document={<FacturaPDF pedido={pedidoSeleccionado} />}
+                document={<FacturaPDF grupo={pedidoSeleccionado} />}
                 fileName="factura_InventySys.pdf"
               >
                 {({ loading }) => (

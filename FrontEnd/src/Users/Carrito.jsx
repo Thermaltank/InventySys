@@ -10,18 +10,24 @@ export const Carrito = ({ show, onHide }) => {
 
   const usuarioId = localStorage.getItem("usuarioId");
   const API_COMPRAS = "http://localhost:8080/api/compras";
+  const API_PRODUCTOS = "http://localhost:8080/api/productos";
 
   useEffect(() => {
     const stored = localStorage.getItem("carrito");
     if (stored) {
       setCarrito(JSON.parse(stored));
     }
-  }, [show]); 
+  }, [show]);
 
   const actualizarLocalStorage = (nuevoCarrito) => {
     setCarrito(nuevoCarrito);
     localStorage.setItem("carrito", JSON.stringify(nuevoCarrito));
   };
+
+  const notificarCompra = () => {
+  const evento = new CustomEvent("compraRealizada");
+  window.dispatchEvent(evento);
+};
 
   const cambiarCantidad = (index, nuevaCantidad) => {
     const copia = [...carrito];
@@ -38,31 +44,70 @@ export const Carrito = ({ show, onHide }) => {
     if (!usuarioId || carrito.length === 0) return;
 
     try {
-      for (const item of carrito) {
+      const nuevoCarrito = [...carrito];
+
+      // Verificamos el stock de cada producto
+      for (let i = 0; i < nuevoCarrito.length; i++) {
+        const item = nuevoCarrito[i];
+        const res = await axios.get(`${API_PRODUCTOS}/${item.producto.id}`);
+        const productoActual = res.data;
+
+        if (item.cantidad > productoActual.stock) {
+          setError(`No hay suficiente stock para "${productoActual.nombre}".`);
+          return;
+        }
+
+        // Guardamos el stock actualizado para el siguiente paso
+        nuevoCarrito[i].producto.stock = productoActual.stock;
+      }
+
+      // Realizamos compras y actualizamos stock
+      for (const item of nuevoCarrito) {
+        const fechaCompra = new Date().toISOString();
+
         const compraDTO = {
           usuario: parseInt(usuarioId),
           producto: item.producto.id,
           cantidad: item.cantidad,
+          fechaCompra,
         };
+
         await axios.post(API_COMPRAS, compraDTO);
+
+        const nuevoStock = item.producto.stock - item.cantidad;
+
+        // Actualizamos el stock en el backend
+        await axios.put(`${API_PRODUCTOS}/${item.producto.id}`, {
+          ...item.producto,
+          stock: nuevoStock,
+        });
+
+        // Actualizamos el stock en el item del carrito (por si lo seguimos mostrando)
+        item.producto.stock = nuevoStock;
       }
+
       setMensaje("Compras confirmadas correctamente.");
-      actualizarLocalStorage([]);
+      notificarCompra();
+      setError(null);
+      actualizarLocalStorage([]); // Limpiar carrito
     } catch (err) {
       console.error("Error al confirmar la compra:", err);
       setError("Error al confirmar la compra.");
     }
   };
- const formatPrice = (precio) => {
-  const precioRedondeado = Math.round(precio); // Redondea el precio a un número entero.
-  
-  return new Intl.NumberFormat('es-CO').format(precioRedondeado);
-};
 
+  const formatPrice = (precio) => {
+    const precioRedondeado = Math.round(precio);
+    return new Intl.NumberFormat("es-CO").format(precioRedondeado);
+  };
 
+  const totalCarrito = carrito.reduce(
+    (acc, item) => acc + item.cantidad * item.producto.precio,
+    0
+  );
 
   return (
-    <Offcanvas show={show} onHide={onHide} placement="end" style={{ width: '500px' }}>
+    <Offcanvas show={show} onHide={onHide} placement="end" style={{ width: "500px" }}>
       <Offcanvas.Header closeButton>
         <Offcanvas.Title>🛒 Carrito de Compras</Offcanvas.Title>
       </Offcanvas.Header>
@@ -95,18 +140,17 @@ export const Carrito = ({ show, onHide }) => {
                         value={item.cantidad}
                         min="1"
                         max={item.producto.stock}
-                        onChange={(e) =>
-                          cambiarCantidad(index, e.target.value)
-                        }
+                        onChange={(e) => cambiarCantidad(index, e.target.value)}
                       />
+                      {item.cantidad > item.producto.stock && (
+                        <div style={{ color: "red", fontSize: "0.8rem" }}>
+                          Stock insuficiente
+                        </div>
+                      )}
                     </td>
-                          <td>${formatPrice(item.cantidad * item.producto.precio)}</td>
+                    <td>${formatPrice(item.cantidad * item.producto.precio)}</td>
                     <td>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => eliminarItem(index)}
-                      >
+                      <Button variant="danger" size="sm" onClick={() => eliminarItem(index)}>
                         Eliminar
                       </Button>
                     </td>
@@ -114,6 +158,10 @@ export const Carrito = ({ show, onHide }) => {
                 ))}
               </tbody>
             </Table>
+
+            <h5 className="text-end mb-3">
+              Total: <strong>${formatPrice(totalCarrito)}</strong>
+            </h5>
 
             <Button variant="success" onClick={confirmarCompra} className="w-100">
               Confirmar Compra Total
