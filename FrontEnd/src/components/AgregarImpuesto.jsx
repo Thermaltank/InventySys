@@ -44,7 +44,7 @@ export const AgregarImpuesto = ({ show, onClose, productos, onGuardar }) => {
           <Form.Label>Porcentaje de Impuesto (%)</Form.Label>
           <Form.Control
             type="number"
-            placeholder="Ej: 19"
+            
             value={impuesto}
             onChange={(e) => setImpuesto(e.target.value)}
           />

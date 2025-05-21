@@ -3,12 +3,19 @@ import { NavBar } from "../components/NavBar"
 
 export const CategoriasRoute = () => {
   return (
-    <div className="d-flex">
-        <NavBar />
-        <div className="flex-grow-1 p-4">
-          {/* Aquí va el contenido principal */}
-          <Categorias/>
-          </div>
-    </div>
+   <div className="d-flex" style={{ height: "100vh" }}>
+         {/* Sidebar fijo a la izquierda */}
+         <NavBar/>
+   
+         {/* Contenedor derecho: header arriba + contenido abajo */}
+         <div className="d-flex flex-column flex-grow-1">
+           {/* Header */}
+   
+           {/* Contenido principal con scroll si hace falta */}
+           <div className="flex-grow-1 p-4 overflow-auto">
+             <Categorias />
+           </div>
+         </div>
+       </div>
   )
 }

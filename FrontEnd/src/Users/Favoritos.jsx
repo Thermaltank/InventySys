@@ -164,20 +164,17 @@ export const Favoritos = () => {
                     <Card.Text>
                       <strong>Precio ${formatPrice(precioFinal)}</strong>
                     </Card.Text>
-                    <Card.Text>
-                      <strong>Stock: {producto.stock}</strong>
-                    </Card.Text>
+                    
                     <Button
                       variant="danger"
-                      size="sm"
                       className="me-2"
                       onClick={() => handleEliminarFavorito(producto.id)}
                     >
-                      Eliminar de favoritos
+                      Eliminar
                     </Button>
                     <Button
                       variant="success"
-                      size="sm"
+                      
                       onClick={() => handleAbrirModalCompra(producto)}
                       disabled={producto.stock === 0}
                     >
