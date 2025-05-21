@@ -15,6 +15,7 @@ import { Pedidos2Route } from "./Pedidos2Route";
 import { Configuracion2Route } from "./Configuracion2Route";
 import { FavoritosRoute } from "./FavoritosRoute";
 import { CategoriasRoute } from "./CategoriasRoute";
+import { EditarUsuarioRoute } from "./EditarUsuarioRoute";
 
 export const MainRoute = () => {
   return (
@@ -33,6 +34,8 @@ export const MainRoute = () => {
       <Route path="/carrito" element={<Carrito />} />
       <Route path="/favoritos" element={<FavoritosRoute />} />
       <Route path="/categorias" element={<CategoriasRoute />} />
+      <Route path="/favoritos" element={<FavoritosRoute />} />
+      <Route path="/Config" element={<EditarUsuarioRoute />} />
       
 
       <Route

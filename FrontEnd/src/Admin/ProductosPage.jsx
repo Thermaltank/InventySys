@@ -1,19 +1,23 @@
 import { useState, useEffect } from 'react';
 import { Badge, Button, Form, Modal, Table } from 'react-bootstrap';
 import axios from 'axios';
+import { AgregarImpuesto } from '../components/AgregarImpuesto';
+ // Asegúrate de que la ruta sea correcta
 
 export const ProductosPage = () => {
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ nombre: '', categoria: '', precio: '', stock: '' });
-  const [editId, setEditId] = useState(null); 
+  const [editId, setEditId] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [categorias, setCategorias] = useState([]);
   const [errorForm, setErrorForm] = useState(null);
 
+  const [impuestos, setImpuestos] = useState({});
+  const [showImpuestoModal, setShowImpuestoModal] = useState(false);
+
   const API_URL = 'http://localhost:8080/api/productos';
 
-  // Cargar productos del backend
   const fetchProducts = async () => {
     try {
       const response = await axios.get(API_URL);
@@ -23,12 +27,12 @@ export const ProductosPage = () => {
     }
   };
 
-  // Cargar categorías guardadas en localStorage
   useEffect(() => {
     const cats = localStorage.getItem('categorias');
-    if (cats) {
-      setCategorias(JSON.parse(cats));
-    }
+    if (cats) setCategorias(JSON.parse(cats));
+
+    const imp = localStorage.getItem('impuestos');
+    if (imp) setImpuestos(JSON.parse(imp));
   }, []);
 
   useEffect(() => {
@@ -41,27 +45,17 @@ export const ProductosPage = () => {
   };
 
   const validateForm = () => {
-    if (!form.nombre.trim()) {
-      setErrorForm('El nombre es obligatorio');
-      return false;
-    }
-    if (!form.categoria.trim()) {
-      setErrorForm('La categoría es obligatoria');
-      return false;
-    }
-    if (!form.precio || isNaN(form.precio) || parseFloat(form.precio) <= 0) {
-      setErrorForm('El precio debe ser un número positivo');
-      return false;
-    }
-    if (!form.stock || isNaN(form.stock) || parseInt(form.stock, 10) < 0) {
-      setErrorForm('El stock debe ser un número igual o mayor a 0');
-      return false;
-    }
+    if (!form.nombre.trim()) return setErrorForm('El nombre es obligatorio');
+    if (!form.categoria.trim()) return setErrorForm('La categoría es obligatoria');
+    if (!form.precio || isNaN(form.precio) || parseFloat(form.precio) <= 0)
+      return setErrorForm('El precio debe ser un número positivo');
+    if (!form.stock || isNaN(form.stock) || parseInt(form.stock, 10) < 0)
+      return setErrorForm('El stock debe ser un número igual o mayor a 0');
+
     setErrorForm(null);
     return true;
   };
 
-  // Agregar o actualizar producto
   const handleAddOrUpdate = async () => {
     if (!validateForm()) return;
 
@@ -89,7 +83,6 @@ export const ProductosPage = () => {
     }
   };
 
-  // Editar producto
   const handleEdit = (product) => {
     setForm({
       nombre: product.nombre,
@@ -102,7 +95,6 @@ export const ProductosPage = () => {
     setErrorForm(null);
   };
 
-  // Eliminar producto
   const handleDelete = async (id) => {
     try {
       await axios.delete(`${API_URL}/${id}`);
@@ -112,19 +104,24 @@ export const ProductosPage = () => {
     }
   };
 
+  const handleGuardarImpuesto = (productoId, porcentaje) => {
+    const nuevos = { ...impuestos, [productoId]: porcentaje };
+    setImpuestos(nuevos);
+    localStorage.setItem('impuestos', JSON.stringify(nuevos));
+  };
+
   const getEstado = (stock) => {
     if (stock === 0) return <Badge bg="danger">Sin stock</Badge>;
     if (stock <= 10) return <Badge bg="warning" text="dark">Pocas unidades</Badge>;
     return <Badge bg="success">Normal</Badge>;
   };
 
-  const filtered = products.filter(p =>
+  const filtered = products.filter((p) =>
     p.nombre.toLowerCase().includes(search.toLowerCase())
   );
 
   const formatPrice = (precio) => {
-    const precioRedondeado = Math.round(precio);
-    return new Intl.NumberFormat('es-CO').format(precioRedondeado);
+    return new Intl.NumberFormat('es-CO').format(Math.round(precio));
   };
 
   return (
@@ -136,21 +133,26 @@ export const ProductosPage = () => {
         placeholder="Buscar productos..."
         className="my-3"
         value={search}
-        onChange={e => setSearch(e.target.value)}
+        onChange={(e) => setSearch(e.target.value)}
       />
 
-      <Button
-        onClick={() => {
-          setForm({ nombre: '', categoria: '', precio: '', stock: '' });
-          setEditId(null);
-          setShowModal(true);
-          setErrorForm(null);
-        }}
-        variant="primary"
-        className="mb-3"
-      >
-        Agregar Producto
-      </Button>
+      <div className="mb-3 d-flex gap-2">
+        <Button
+          onClick={() => {
+            setForm({ nombre: '', categoria: '', precio: '', stock: '' });
+            setEditId(null);
+            setShowModal(true);
+            setErrorForm(null);
+          }}
+          variant="primary"
+        >
+          Agregar Producto
+        </Button>
+
+        <Button variant="secondary" onClick={() => setShowImpuestoModal(true)}>
+          Asignar Impuesto
+        </Button>
+      </div>
 
       <Table bordered hover responsive>
         <thead>
@@ -158,44 +160,55 @@ export const ProductosPage = () => {
             <th>#</th>
             <th>Nombre</th>
             <th>Categoría</th>
-            <th>Precio</th>
+            <th>Precio Base</th>
+            <th>Impuesto %</th>
+            <th>Precio Final</th>
             <th>Stock</th>
             <th>Estado</th>
             <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
-          {filtered.map((product, index) => (
-            <tr key={product.id}>
-              <td>{index + 1}</td>
-              <td>{product.nombre}</td>
-              <td>{product.categoria}</td>
-              <td>${formatPrice(product.precio)}</td>
-              <td>{product.stock}</td>
-              <td>{getEstado(product.stock)}</td>
-              <td>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => handleEdit(product)}
-                  className="me-2"
-                >
-                  Editar
-                </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  onClick={() => handleDelete(product.id)}
-                >
-                  Eliminar
-                </Button>
-              </td>
-            </tr>
-          ))}
+          {filtered.map((product, index) => {
+  const precioBase = parseFloat(product.precio);
+  const impuesto = impuestos[product.id] || 0;
+  const precioFinal = precioBase + (precioBase * impuesto) / 100;
+
+  return (
+    <tr key={product.id}>
+      <td>{index + 1}</td>
+      <td>{product.nombre}</td>
+      <td>{product.categoria}</td>
+      <td>${formatPrice(precioBase)}</td>
+      <td>{impuesto}%</td>
+      <td>${formatPrice(precioFinal)}</td>
+      <td>{product.stock}</td>
+      <td>{getEstado(product.stock)}</td>
+      <td>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => handleEdit(product)}
+          className="me-2"
+        >
+          Editar
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
+          onClick={() => handleDelete(product.id)}
+        >
+          Eliminar
+        </Button>
+      </td>
+    </tr>
+  );
+})}
+
         </tbody>
       </Table>
 
-      {/* Modal */}
+      {/* Modal Producto */}
       <Modal show={showModal} onHide={() => setShowModal(false)}>
         <Modal.Header closeButton>
           <Modal.Title>{editId !== null ? 'Editar Producto' : 'Nuevo Producto'}</Modal.Title>
@@ -254,6 +267,14 @@ export const ProductosPage = () => {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* Modal Impuesto */}
+      <AgregarImpuesto
+        show={showImpuestoModal}
+        onClose={() => setShowImpuestoModal(false)}
+        productos={products}
+        onGuardar={handleGuardarImpuesto}
+      />
     </div>
   );
 };

@@ -1,26 +1,48 @@
 import axios from "axios";
 import { useEffect, useState } from "react";
-import { Container, Table, Alert, Button } from "react-bootstrap";
+import {
+  Container,
+  Table,
+  Alert,
+  Button,
+  Modal,
+  Form
+} from "react-bootstrap";
 
 export const PedidosPage = () => {
-  const [pedidos, setPedidos] = useState([]);
-  const [mensaje, setMensaje] = useState(null);
+  const [pedidosAgrupados, setPedidosAgrupados] = useState([]);
+  const [mensaje] = useState(null);
   const [error, setError] = useState(null);
   const [statusVisual, setStatusVisual] = useState({});
+  const [impuestos, setImpuestos] = useState({});
+  const [mostrarModal, setMostrarModal] = useState(false);
+  const [motivoCancelacion, setMotivoCancelacion] = useState("");
+  const [grupoParaCancelar, setGrupoParaCancelar] = useState(null);
+  const [motivosCancelados, setMotivosCancelados] = useState(() => {
+    const stored = localStorage.getItem("motivosCancelados");
+    return stored ? JSON.parse(stored) : {};
+  });
 
   const API_PEDIDOS = "http://localhost:8080/api/compras";
   const API_USUARIO = "http://localhost:8080/api/usuarios";
   const API_PRODUCTO = "http://localhost:8080/api/productos";
 
-  // Cargar estado visual desde localStorage
   useEffect(() => {
     const stored = localStorage.getItem("pedidoStatusVisual");
     if (stored) {
       setStatusVisual(JSON.parse(stored));
     }
+
+    const impuestosStorage = localStorage.getItem("impuestos");
+    if (impuestosStorage) {
+      try {
+        setImpuestos(JSON.parse(impuestosStorage));
+      } catch {
+        console.warn("Error al parsear los impuestos del localStorage.");
+      }
+    }
   }, []);
 
-  // Cargar pedidos
   useEffect(() => {
     const fetchPedidos = async () => {
       try {
@@ -30,12 +52,13 @@ export const PedidosPage = () => {
             try {
               const [usuarioRes, productoRes] = await Promise.all([
                 axios.get(`${API_USUARIO}/${pedido.usuario}`),
-                axios.get(`${API_PRODUCTO}/${pedido.producto}`)
+                axios.get(`${API_PRODUCTO}/${pedido.producto}`),
               ]);
               return {
                 ...pedido,
                 usuario: usuarioRes.data,
                 producto: productoRes.data,
+                fechaCompra: pedido.fechaCompra || new Date().toISOString(),
               };
             } catch (err) {
               console.warn("Error en usuario o producto:", err);
@@ -43,25 +66,67 @@ export const PedidosPage = () => {
             }
           })
         );
-        setPedidos(pedidosConDetalles);
+
+        const agrupados = pedidosConDetalles.reduce((acc, pedido) => {
+          const fecha = new Date(pedido.fechaCompra);
+          const clave = fecha.toISOString().slice(0, 19);
+
+          let grupo = acc.find((g) => g.clave === clave);
+          if (!grupo) {
+            grupo = {
+              clave,
+              fecha,
+              pedidos: [],
+            };
+            acc.push(grupo);
+          }
+          grupo.pedidos.push(pedido);
+          return acc;
+        }, []);
+
+        agrupados.sort((a, b) => b.fecha - a.fecha);
+        setPedidosAgrupados(agrupados);
       } catch (e) {
         setError("Error al cargar los pedidos.");
         console.error(e);
       }
     };
+
     fetchPedidos();
   }, []);
 
-  // Guardar estado visual en localStorage
-  const actualizarEstadoVisual = (id, estado) => {
-    const nuevos = { ...statusVisual, [id]: estado };
+  const actualizarEstadoVisualGrupo = (grupo, estado) => {
+    const nuevos = { ...statusVisual };
+    grupo.pedidos.forEach((pedido) => {
+      nuevos[pedido.id] = estado;
+    });
     setStatusVisual(nuevos);
     localStorage.setItem("pedidoStatusVisual", JSON.stringify(nuevos));
+  };
+
+  const confirmarCancelacion = () => {
+    if (!grupoParaCancelar) return;
+
+    const nuevosMotivos = { ...motivosCancelados };
+    grupoParaCancelar.pedidos.forEach((pedido) => {
+      nuevosMotivos[pedido.id] = motivoCancelacion;
+    });
+
+    setMotivosCancelados(nuevosMotivos);
+    localStorage.setItem("motivosCancelados", JSON.stringify(nuevosMotivos));
+
+    actualizarEstadoVisualGrupo(grupoParaCancelar, "cancelar");
+
+    setMostrarModal(false);
+    setMotivoCancelacion("");
+    setGrupoParaCancelar(null);
   };
 
   const limpiarEstados = () => {
     setStatusVisual({});
     localStorage.removeItem("pedidoStatusVisual");
+    setMotivosCancelados({});
+    localStorage.removeItem("motivosCancelados");
   };
 
   const getRowClass = (id) => {
@@ -81,6 +146,24 @@ export const PedidosPage = () => {
     return new Intl.NumberFormat("es-CO").format(Math.round(precio));
   };
 
+  const obtenerTextoEstado = (estado) => {
+    switch (estado) {
+      case "vender":
+        return "Pedido en camino";
+      case "procesar":
+        return "Procesando Pedido";
+      case "cancelar":
+        return "Cancelado";
+      default:
+        return "Sin estado";
+    }
+  };
+
+  const calcularPrecioConImpuesto = (productoId, precioBase) => {
+    const impuesto = impuestos[productoId] || 0;
+    return precioBase * (1 + impuesto / 100);
+  };
+
   return (
     <Container className="mt-4">
       <h3>Pedidos de Usuarios</h3>
@@ -94,60 +177,109 @@ export const PedidosPage = () => {
         </Button>
       </div>
 
-      {pedidos.length === 0 ? (
+      {pedidosAgrupados.length === 0 ? (
         <p>No hay pedidos para mostrar.</p>
       ) : (
-        <Table bordered hover responsive>
-          <thead>
-            <tr>
-              <th>Usuario</th>
-              <th>Producto</th>
-              <th>Cantidad</th>
-              <th>Total</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pedidos.map((pedido) => (
-              <tr key={pedido.id} className={getRowClass(pedido.id)}>
-                <td>{pedido.usuario?.nombre || "Usuario no disponible"}</td>
-                <td>{pedido.producto?.nombre || "Producto no disponible"}</td>
-                <td>{pedido.cantidad}</td>
-                <td>
-                  {pedido.producto?.precio
-                    ? `$${formatPrice(pedido.cantidad * pedido.producto.precio)}`
-                    : "N/A"}
-                </td>
-                <td>
-                  <div className="d-flex gap-2 flex-wrap">
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() => actualizarEstadoVisual(pedido.id, "cancelar")}
-                    >
-                      Cancelar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="warning"
-                      onClick={() => actualizarEstadoVisual(pedido.id, "procesar")}
-                    >
-                      Procesar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="success"
-                      onClick={() => actualizarEstadoVisual(pedido.id, "vender")}
-                    >
-                      Vender
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
+        pedidosAgrupados.map((grupo) => {
+
+          return (
+            <div key={grupo.clave} className="mb-4">
+              <h5>Fecha: {grupo.fecha.toLocaleString()}</h5>
+              <Table bordered hover responsive>
+                <thead>
+                  <tr>
+                    <th>Usuario</th>
+                    <th>Producto</th>
+                    <th>Cantidad</th>
+                    <th>Total (con impuesto)</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grupo.pedidos.map((pedido) => {
+                    const productoId = pedido.producto?.id;
+                    const precioBase = pedido.producto?.precio || 0;
+                    const precioConImpuesto = calcularPrecioConImpuesto(productoId, precioBase);
+                    const total = pedido.cantidad * precioConImpuesto;
+
+                    return (
+                      <tr key={pedido.id} className={getRowClass(pedido.id)}>
+                        <td>{pedido.usuario?.nombre || "Usuario no disponible"}</td>
+                        <td>{pedido.producto?.nombre || "Producto no disponible"}</td>
+                        <td>{pedido.cantidad}</td>
+                        <td>{`$${formatPrice(total)}`}</td>
+                        <td>
+                          {obtenerTextoEstado(statusVisual[pedido.id])}
+                          {statusVisual[pedido.id] === "cancelar" && motivosCancelados[pedido.id] && (
+                            <div className="text-muted small">Motivo: {motivosCancelados[pedido.id]}</div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+              <div className="d-flex gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => {
+                    setGrupoParaCancelar(grupo);
+                    setMostrarModal(true);
+                  }}
+                >
+                  Cancelar Pedido
+                </Button>
+                <Button
+                  size="sm"
+                  variant="warning"
+                  onClick={() => actualizarEstadoVisualGrupo(grupo, "procesar")}
+                >
+                  Procesar Pedido
+                </Button>
+                <Button
+                  size="sm"
+                  variant="success"
+                  onClick={() => actualizarEstadoVisualGrupo(grupo, "vender")}
+                >
+                  Vender Pedido
+                </Button>
+              </div>
+            </div>
+          );
+        })
       )}
+
+      <Modal show={mostrarModal} onHide={() => setMostrarModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>Motivo de Cancelación</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form>
+            <Form.Group>
+              <Form.Label>Ingrese el motivo</Form.Label>
+              <Form.Control
+                as="textarea"
+                rows={3}
+                value={motivoCancelacion}
+                onChange={(e) => setMotivoCancelacion(e.target.value)}
+              />
+            </Form.Group>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setMostrarModal(false)}>
+            Cerrar
+          </Button>
+          <Button
+            variant="danger"
+            onClick={confirmarCancelacion}
+            disabled={!motivoCancelacion.trim()}
+          >
+            Confirmar Cancelación
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </Container>
   );
 };

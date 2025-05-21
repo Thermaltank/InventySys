@@ -50,12 +50,6 @@ export const NavBar = () => {
             className={`nav-link ${isActive("/configuracion") ? "active" : "text-white"}`}>
             ⚙️ Configuración
           </Link>
-        </li><li className="nav-item mb-2">
-          <Link 
-            to="/Proveedores" 
-            className={`nav-link ${isActive("/") ? "active" : "text-white"}`}>
-            📦 Proveedores
-          </Link>
         </li>
 
         <li className="nav-item mt-auto"

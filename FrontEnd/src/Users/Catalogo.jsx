@@ -14,6 +14,7 @@ import { BotonCarrito } from "../components/BotonCarrito";
 
 export const Catalogo = () => {
   const [productos, setProductos] = useState([]);
+  const [impuestos, setImpuestos] = useState({});
   const [mensaje, setMensaje] = useState(null);
   const [error, setError] = useState(null);
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
@@ -23,6 +24,11 @@ export const Catalogo = () => {
   const [busqueda, setBusqueda] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState("");
   const [precioMax, setPrecioMax] = useState("");
+
+  const [showModalDatos, setShowModalDatos] = useState(false);
+  const [cedula, setCedula] = useState("");
+  const [direccion, setDireccion] = useState("");
+  const [metodoPago, setMetodoPago] = useState("contraentrega");
 
   const API_COMPRAS = "http://localhost:8080/api/compras";
   const API_PRODUCTOS = "http://localhost:8080/api/productos";
@@ -42,12 +48,16 @@ export const Catalogo = () => {
 
     fetchProductos();
 
+    const savedImpuestos = localStorage.getItem("impuestos");
+    if (savedImpuestos) {
+      setImpuestos(JSON.parse(savedImpuestos));
+    }
+
     const listener = () => {
       fetchProductos();
     };
 
     window.addEventListener("compraRealizada", listener);
-
     return () => {
       window.removeEventListener("compraRealizada", listener);
     };
@@ -62,13 +72,11 @@ export const Catalogo = () => {
 
   const handleCantidadChange = (e) => {
     const val = parseInt(e.target.value);
-
     if (isNaN(val) || val < 1) {
       setCantidad(1);
       setErrorCantidad(null);
       return;
     }
-
     if (val > productoSeleccionado.stock) {
       setErrorCantidad("No hay suficiente stock para la cantidad solicitada");
     } else {
@@ -160,9 +168,15 @@ export const Catalogo = () => {
   const categoriasUnicas = [...new Set(productos.map((p) => p.categoria))];
 
   const productosFiltrados = productos.filter((producto) => {
-    const nombreCoincide = producto.nombre.toLowerCase().includes(busqueda.toLowerCase());
-    const categoriaCoincide = categoriaFiltro ? producto.categoria === categoriaFiltro : true;
-    const precioCoincide = precioMax ? parseFloat(producto.precio) <= parseFloat(precioMax) : true;
+    const nombreCoincide = producto.nombre
+      .toLowerCase()
+      .includes(busqueda.toLowerCase());
+    const categoriaCoincide = categoriaFiltro
+      ? producto.categoria === categoriaFiltro
+      : true;
+    const precioCoincide = precioMax
+      ? parseFloat(producto.precio) <= parseFloat(precioMax)
+      : true;
     return nombreCoincide && categoriaCoincide && precioCoincide;
   });
 
@@ -184,10 +198,15 @@ export const Catalogo = () => {
             />
           </Col>
           <Col md={4}>
-            <Form.Select value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)}>
+            <Form.Select
+              value={categoriaFiltro}
+              onChange={(e) => setCategoriaFiltro(e.target.value)}
+            >
               <option value="">Todas las categorías</option>
               {categoriasUnicas.map((cat, i) => (
-                <option key={i} value={cat}>{cat}</option>
+                <option key={i} value={cat}>
+                  {cat}
+                </option>
               ))}
             </Form.Select>
           </Col>
@@ -203,27 +222,35 @@ export const Catalogo = () => {
       </Form>
 
       <Row>
-        {productosFiltrados.map((producto) => (
-          <Col md={4} lg={3} key={producto.id} className="mb-4">
-            <Card
-              onClick={() => handleCardClick(producto)}
-              className="h-100 shadow-sm"
-              style={{ cursor: "pointer" }}
-            >
-              <Card.Body>
-                <Card.Title>{producto.nombre}</Card.Title>
-                <Card.Subtitle className="mb-2 text-muted fw-semibold">
-                  Categoría: {producto.categoria}
-                </Card.Subtitle>
-                <Card.Text>Precio: ${formatPrice(producto.precio)}</Card.Text>
-                {getStockMessage(producto.stock)}
-              </Card.Body>
-            </Card>
-          </Col>
-        ))}
+        {productosFiltrados.map((producto) => {
+          const impuesto = impuestos[producto.id] || 0;
+          const precioBase = parseFloat(producto.precio);
+          const precioFinal = precioBase + (precioBase * impuesto) / 100;
+
+          return (
+            <Col md={4} lg={3} key={producto.id} className="mb-4">
+              <Card
+                onClick={() => handleCardClick(producto)}
+                className="h-100 shadow-sm"
+                style={{ cursor: "pointer" }}
+              >
+                <Card.Body>
+                  <Card.Title>{producto.nombre}</Card.Title>
+                  <Card.Subtitle className="mb-2 text-muted fw-semibold">
+                    Categoría: {producto.categoria}
+                  </Card.Subtitle>
+                  <Card.Text>
+                    <strong>Precio ${formatPrice(precioFinal)}</strong>
+                  </Card.Text>
+                  {getStockMessage(producto.stock)}
+                </Card.Body>
+              </Card>
+            </Col>
+          );
+        })}
       </Row>
 
-      {/* Modal */}
+      {/* Modal de producto */}
       <Modal show={showModal} onHide={() => setShowModal(false)} centered>
         <Modal.Header closeButton>
           <Modal.Title>{productoSeleccionado?.nombre}</Modal.Title>
@@ -243,12 +270,101 @@ export const Catalogo = () => {
             </Alert>
           )}
         </Modal.Body>
+
+<Modal.Footer>
+  <Button
+    variant="success"
+    onClick={() => setShowModalDatos(true)}
+    disabled={!!errorCantidad}
+  >
+    Comprar ya
+  </Button>
+  <Button
+    variant="primary"
+    onClick={handleAgregarCarrito}
+    disabled={!!errorCantidad}
+  >
+    Añadir al carrito
+  </Button>
+  <Button
+    variant="warning"
+    onClick={() => {
+      const storedFavs = localStorage.getItem("favoritos");
+      const favoritos = storedFavs ? JSON.parse(storedFavs) : [];
+
+      // Evitamos duplicados
+      if (!favoritos.find((p) => p.id === productoSeleccionado.id)) {
+        favoritos.push(productoSeleccionado);
+        localStorage.setItem("favoritos", JSON.stringify(favoritos));
+        setMensaje("Producto añadido a favoritos");
+      } else {
+        setMensaje("Producto ya está en favoritos");
+      }
+      setShowModal(false);
+    }}
+  >
+    Añadir a favoritos
+  </Button>
+</Modal.Footer>
+
+      </Modal>
+
+      {/* Modal de datos del usuario */}
+      <Modal show={showModalDatos} onHide={() => setShowModalDatos(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Completa tus datos</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form>
+            <Form.Group className="mb-3">
+              <Form.Label>Cédula</Form.Label>
+              <Form.Control
+                type="text"
+                value={cedula}
+                onChange={(e) => setCedula(e.target.value)}
+              />
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Dirección</Form.Label>
+              <Form.Control
+                type="text"
+                value={direccion}
+                onChange={(e) => setDireccion(e.target.value)}
+              />
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+              <Form.Label>Método de pago</Form.Label>
+              <Form.Select
+                value={metodoPago}
+                onChange={(e) => setMetodoPago(e.target.value)}
+              >
+                <option value="contraentrega">Pago contraentrega</option>
+                <option value="transferencia">Pago por transferencia</option>
+              </Form.Select>
+            </Form.Group>
+          </Form>
+        </Modal.Body>
         <Modal.Footer>
-          <Button variant="success" onClick={handleCompra} disabled={!!errorCantidad}>
-            Comprar ya
-          </Button>
-          <Button variant="primary" onClick={handleAgregarCarrito} disabled={!!errorCantidad}>
-            Añadir al carrito
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (!cedula || !direccion || !metodoPago) {
+                alert("Por favor completa todos los campos.");
+                return;
+              }
+
+              localStorage.setItem(
+                "datosCompra",
+                JSON.stringify({ cedula, direccion, metodoPago })
+              );
+
+              setShowModalDatos(false);
+              handleCompra();
+            }}
+          >
+            Confirmar Compra
           </Button>
         </Modal.Footer>
       </Modal>
